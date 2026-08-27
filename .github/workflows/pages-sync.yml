@@ -51,6 +51,23 @@ jobs:
           git config user.name "github-actions[bot]"
           cd ..
           git clone --depth=1 --single-branch --branch=main "$REMOTE" src
+          # MIRROR, DO NOT ACCUMULATE. `git archive | tar -x` extracts and never
+          # deletes, so anything published once stayed on gh-pages forever even
+          # after main stopped shipping it. That has now bitten twice: a stale
+          # .gitignore went on excluding the APKs from `git add`, and three
+          # superseded skin zips outlived the page that linked to them, leaving
+          # a folder whose listing no longer matched its contents. Fixing each
+          # instance by hand was the mistake; this clears the published paths
+          # first so removal from main is removal from the site.
+          #
+          # downloads/ is deliberately spared: its APKs come from a release,
+          # not from main, and wiping them would drop the download page to a
+          # 404 on any run where no release fits the size limit.
+          for d in $(git -C src ls-tree --name-only HEAD | grep -vxE '\.github|\.secrets|\.gitignore'); do
+            [ "$d" = "downloads" ] && continue
+            rm -rf "gh/$d"
+          done
+          rm -f gh/.gitignore
           cd src
           # .github cannot be pushed with GITHUB_TOKEN; .secrets must never be
           # published; and .gitignore MUST NOT COME ALONG. That last one is not
@@ -64,13 +81,6 @@ jobs:
           # shellcheck disable=SC2086
           git archive HEAD -- $PUBLISH | tar -x -C ../gh
           cd ..
-          # git archive|tar EXTRACTS; it never deletes. A file published to
-          # gh-pages once stays there even after main stops publishing it --
-          # which is how .gitignore, with its `*.apk` rule, survived being
-          # removed from the publish set and went on quietly excluding the
-          # APKs from `git add`. Remove it explicitly rather than trusting that
-          # not-copying is the same as not-present.
-          rm -f gh/.gitignore
           mkdir -p gh/downloads
           # TAKE THE NEWEST RELEASE THAT ACTUALLY FITS, NOT SIMPLY THE NEWEST.
           #
