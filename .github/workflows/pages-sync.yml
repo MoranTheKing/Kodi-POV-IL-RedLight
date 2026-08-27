@@ -65,20 +65,42 @@ jobs:
           git archive HEAD -- $PUBLISH | tar -x -C ../gh
           cd ..
           mkdir -p gh/downloads
-          # NOT `|| true`. If a release exists and its APKs cannot be fetched,
-          # the page would quietly keep serving stale ones -- which is the exact
-          # failure this file was rewritten to end. Only the genuine
-          # "no release yet" case is allowed to pass.
-          if gh release view --repo "$REPO_SLUG" >/dev/null 2>&1; then
-            gh release download --repo "$REPO_SLUG" \
+          # TAKE THE NEWEST RELEASE THAT ACTUALLY FITS, NOT SIMPLY THE NEWEST.
+          #
+          # gh-pages is a git branch and git refuses any file of 100 MB or
+          # more. One build published a 119 MB APK, and because this job used
+          # "the latest release" unconditionally, EVERY publish afterwards
+          # downloaded that APK, staged it, and had the push rejected -- so a
+          # single bad release permanently broke the download page, including
+          # for commits that had nothing to do with it.
+          #
+          # Skipping over it costs nothing and heals itself: the page keeps
+          # serving the last good APK, and the moment a build within the limit
+          # is released it is picked up automatically. No manual cleanup, and
+          # no state to remember.
+          LIMIT=$((100 * 1000 * 1000))
+          PICKED=""
+          for tag in $(gh release list --repo "$REPO_SLUG" --limit 20 \
+                        --json tagName --jq '.[].tagName'); do
+            sizes=$(gh api "repos/$REPO_SLUG/releases/tags/$tag" \
+                      --jq '.assets[] | select(.name|endswith(".apk")) | .size' 2>/dev/null || true)
+            [ -n "$sizes" ] || continue
+            fits=1
+            for s in $sizes; do [ "$s" -lt "$LIMIT" ] || fits=0; done
+            if [ "$fits" = "1" ]; then PICKED="$tag"; break; fi
+            echo "::warning::skipping release $tag -- an APK in it is at or over the ${LIMIT} byte limit git will accept"
+          done
+          if [ -n "$PICKED" ]; then
+            echo "publishing APKs from release $PICKED"
+            gh release download "$PICKED" --repo "$REPO_SLUG" \
               --pattern "POV-IL-Lab-64bit.apk" \
               --pattern "POV-IL-Lab-32bit.apk" \
               --dir gh/downloads --clobber
             test -s gh/downloads/POV-IL-Lab-64bit.apk
             test -s gh/downloads/POV-IL-Lab-32bit.apk
-            echo "APKs staged:"; ls -la gh/downloads/*.apk
+            ls -la gh/downloads/*.apk
           else
-            echo "::notice::No release yet -- publishing the page without APKs."
+            echo "::notice::No release with APKs inside the size limit; leaving whatever the page already serves."
           fi
           touch gh/.nojekyll
           cd gh
@@ -100,10 +122,10 @@ jobs:
           # missing from the commit; the only honest check is to ask the tree
           # what it actually contains. Same lesson as the patcher health report
           # in the production repo: verify the outcome, not the step.
-          if gh release view --repo "$REPO_SLUG" >/dev/null 2>&1; then
+          if [ -n "$PICKED" ]; then
             for f in POV-IL-Lab-64bit.apk POV-IL-Lab-32bit.apk; do
               if ! git cat-file -e "HEAD:downloads/$f" 2>/dev/null; then
-                echo "::error::downloads/$f is NOT in the published gh-pages tree, even though a release exists. The download page would serve a 404."
+                echo "::error::downloads/$f is NOT in the published gh-pages tree even though release $PICKED carries it. The download page would serve a 404."
                 exit 1
               fi
               echo "verified in tree: downloads/$f ($(git cat-file -s "$(git rev-parse "HEAD:downloads/$f")") bytes)"
