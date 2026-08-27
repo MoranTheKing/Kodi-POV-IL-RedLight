@@ -64,6 +64,13 @@ jobs:
           # shellcheck disable=SC2086
           git archive HEAD -- $PUBLISH | tar -x -C ../gh
           cd ..
+          # git archive|tar EXTRACTS; it never deletes. A file published to
+          # gh-pages once stays there even after main stops publishing it --
+          # which is how .gitignore, with its `*.apk` rule, survived being
+          # removed from the publish set and went on quietly excluding the
+          # APKs from `git add`. Remove it explicitly rather than trusting that
+          # not-copying is the same as not-present.
+          rm -f gh/.gitignore
           mkdir -p gh/downloads
           # TAKE THE NEWEST RELEASE THAT ACTUALLY FITS, NOT SIMPLY THE NEWEST.
           #
