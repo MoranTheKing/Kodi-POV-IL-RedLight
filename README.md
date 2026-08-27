@@ -79,23 +79,27 @@ Then the APK build can run.
 
 ## What is in the APK, and what is deliberately not
 
-**In:** Kodi 22 under a different name and icon, plus the three skins bundled
-into `assets/addons/` — `script.fentastic.helper`, `skin.fentastic`,
-`skin.povil.nox`. They are OFFERED, not activated: Kodi still boots into
-Estuary, so if a skin turns out not to render on Piers the device stays usable
-and the skin can be switched away from.
+**In:** Kodi 22 under a different name and icon. That is all.
 
-That directory is Kodi's SYSTEM addon path (`special://xbmc/addons/`), not the
-user profile, and putting the wrong thing there is how you get a black screen
-on launch — a wrong-platform copy of an addon Kodi already ships breaks a
-required system addon and startup aborts. The build therefore checks every id
-against what the official APK already contains and STOPS rather than
-overwriting. None of the three is a Kodi system addon, so none of them collides.
+**Not in:** the skins, Red Light, the wizard, any video add-on.
 
-The same zips remain installable by hand from the Kodi file source, for anyone
-who would rather not reinstall the APK.
+The skins were bundled into `assets/addons/` for one build and it does not
+work, for a reason worth writing down rather than rediscovering. It was not a
+Kodi problem — the APK built fine. It is that **the download page is a git
+branch, and git refuses any file of 100 MB or more.** The three skins add 45 MB,
+which took the APK from 76 MB to 119 MB, and the push to `gh-pages` was
+rejected after the build had already spent thirteen minutes going green.
 
-**Not in:** Red Light, the wizard, build hydration, any video add-on.
+The build now checks the APK size immediately after signing and fails there,
+with an error naming the real cause, instead of letting a publish job fail
+later with a message about `gh-pages` that explains nothing.
+
+So the skins are delivered as zips through the Kodi file source, which has no
+such limit. Three installs, once.
+
+(GitHub Releases would take a 119 MB asset happily. The download page cannot
+use them: a Release download is a redirect chain, and Downloader does not
+follow it.)
 
 That is not laziness. If the skins do not come up on Piers there is nothing to
 port, and every hour spent on the other 132 `plugin://` references would be
@@ -161,8 +165,8 @@ Carries the three skins as installable zips. Install `script.fentastic.helper`
 FIRST — both skins call into it, and installing a skin before it produces
 errors that look like the skin itself failing.
 
-Only needed if you are not reinstalling the APK; from `22.0-povr.2` onward the
-same three are bundled in it.
+This is the only way to get the skins — see above for why they cannot ride in
+the APK.
 
 **Updating in place.** A new APK with the same package id and the same signing
 key updates over the old one and keeps everything — settings, installed

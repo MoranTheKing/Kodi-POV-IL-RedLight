@@ -2,54 +2,64 @@
 <html lang="he" dir="rtl">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>POV IL Lab — סקינים</title>
+<title>POV IL Lab — התקנת הסקינים</title>
 <style>
  :root{color-scheme:dark}
  body{margin:0;background:#0d1117;color:#e6edf3;font:16px/1.7 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;padding:2rem 1rem}
  .wrap{max-width:44rem;margin:0 auto}
- h1{font-size:1.5rem;margin:0 0 1.5rem}
+ h1{font-size:1.5rem;margin:0 0 1.2rem}
  .card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.1rem 1.3rem;margin:0 0 1rem}
+ .warn{border-color:#f85149}
  a{color:#58a6ff}
  code{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:.1rem .35rem;font-size:.9em;direction:ltr;display:inline-block}
- ol{padding-inline-start:1.3rem}
- li{margin:.4rem 0}
+ ol{padding-inline-start:1.3rem} li{margin:.5rem 0}
+ .dim{color:#8b949e}
 </style>
 <div class="wrap">
-<h1>סקינים לבדיקה על קודי 22</h1>
+<h1>התקנת הסקינים</h1>
 
-<div class="card">
-<b>המקור להוספה ב-Kodi</b>
-<p><code>https://morantheking.github.io/Kodi-POV-IL-RedLight/wizard/</code></p>
+<div class="card warn">
+<b>אם ניסית קודם והתוספים לא הופיעו &mdash; זו הסיבה.</b><br>
+<code>script.fentastic.helper</code> דורש את <code>script.module.requests</code>, שלא קיים בקודי נקי.
+בלעדיו ה-helper לא נכנס, ושני הסקינים דורשים אותו &mdash; אז כל השרשרת נופלת בשקט.
 </div>
 
 <div class="card">
-<b>סדר ההתקנה &mdash; ה-helper ראשון</b>
+<b>הפתרון: מאגר. התקנה אחת, השאר נפתר לבד.</b>
 <ol>
-<li><a href="script.fentastic.helper.zip">script.fentastic.helper.zip</a> &mdash; FENtastic ו-Nox שניהם קוראים לו, והתקנת סקין לפניו נותנת שגיאות</li>
-<li><a href="skin.fentastic-1.0.25.zip">skin.fentastic-1.0.25.zip</a> &mdash; 21MB</li>
-<li><a href="skin.povil.nox-1.0.11.zip">skin.povil.nox-1.0.11.zip</a> &mdash; 24MB</li>
+<li>הוסף מקור:<br><code>https://morantheking.github.io/Kodi-POV-IL-RedLight/wizard/</code></li>
+<li>Add-ons &rarr; Install from zip file &rarr; <b>repository.povillab-1.0.0.zip</b></li>
+<li>Add-ons &rarr; Install from repository &rarr; <b>POV IL Lab</b> &rarr; Look and feel &rarr; Skin</li>
+<li>בחר <b>FENtastic</b> או <b>NOX</b> &mdash; קודי יוריד לבד את כל התלויות</li>
 </ol>
-<p style="color:#8b949e;margin:.4rem 0 0">
-Settings &rarr; File manager &rarr; Add source &rarr; הדבק את הכתובת למעלה &rarr;
-Add-ons &rarr; Install from zip file
+<p class="dim" style="margin:.4rem 0 0">
+אם התקנת קודם ידנית ונכשל &mdash; אפשר פשוט להתקין מהמאגר מעל, אין צורך לנקות.
 </p>
 </div>
 
 <div class="card">
-<b>מה בודקים</b>
-<ol>
-<li>הסקין בכלל נטען, או שהמסך נשאר שחור / לא מגיב</li>
-<li>מסך הבית מצייר &mdash; פוסטרים, לוגו, תפריט</li>
-<li>עברית מוצגת נכון ובכיוון הנכון (RTL)</li>
-<li>מקש Back חוזר אחורה במקום לצאת מקודי</li>
-</ol>
+<b>מה יש במאגר</b>
+<p class="dim" style="margin:0 0 .4rem">עשרה תוספים; אתה בוחר שניים, קודי מביא את השאר.</p>
+<table style="width:100%;border-collapse:collapse">
+<tr><td style="padding:.2rem 0">skin.fentastic</td><td class="dim">1.0.25</td></tr>
+<tr><td style="padding:.2rem 0">skin.povil.nox</td><td class="dim">1.0.11</td></tr>
+<tr><td style="padding:.2rem 0">script.fentastic.helper</td><td class="dim">0.6.20a</td></tr>
+<tr><td style="padding:.2rem 0" colspan="2" class="dim">+ requests, urllib3, idna, chardet, certifi, six</td></tr>
+</table>
 </div>
 
-<div class="card" style="border-color:#f85149">
-<b>הערה על ה-Back</b><br>
-ב-Estuary הנקי, Back במסך הבית <b>יוצא מקודי</b> &mdash; זו התנהגות רגילה של קודי באנדרואיד ולא תקלה של קודי 22.
-FENtastic מגדיר 40 מטפלי <code>&lt;onback&gt;</code> משלו ולכן שם זה חוזר אחורה; ב-Estuary יש 4.
-אם אחרי התקנת FENtastic ה-Back מתנהג כרגיל &mdash; זה נפתר מעצמו.
+<div class="card">
+<b>מה בודקים אחרי שהסקין נטען</b>
+<ol>
+<li>הוא בכלל מצייר, או מסך שחור / לא מגיב</li>
+<li>מסך הבית &mdash; פוסטרים, לוגו, תפריט</li>
+<li>עברית ו-RTL</li>
+<li>Back חוזר אחורה במקום לצאת</li>
+</ol>
+<p class="dim" style="margin:.4rem 0 0">
+לגבי Back: ב-Estuary הנקי הוא יוצא, וזו התנהגות רגילה של קודי באנדרואיד ולא תקלה של קודי 22 &mdash;
+ל-FENtastic יש 40 מטפלי <code>&lt;onback&gt;</code> משלו ול-Estuary יש 4.
+</p>
 </div>
 
 <p><a href="../">&larr; חזרה לדף ההורדות</a></p>
