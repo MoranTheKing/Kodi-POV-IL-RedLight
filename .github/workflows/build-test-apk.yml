@@ -37,11 +37,11 @@ on:
       version:
         description: 'Release label (e.g. 22.0-povr.1)'
         required: true
-        default: '22.0-povr.2'
+        default: '22.0-povr.3'
       version_code:
         description: 'Android versionCode'
         required: true
-        default: '2200002'
+        default: '2200003'
 
 permissions:
   contents: write
@@ -174,45 +174,6 @@ jobs:
             done
             echo "::endgroup::"
 
-            echo "::group::Bundle the three skins into assets/"
-            # THE RULE FROM THE PRODUCTION REPO, AND IT IS NOT OPTIONAL:
-            # assets/addons/ inside the APK is Kodi's SYSTEM addon directory
-            # (special://xbmc/addons/), not the user profile. Dropping a
-            # wrong-platform copy of something Kodi ships there -- the classic
-            # case is inputstream.adaptive arriving with a Windows-only
-            # addon.xml -- breaks a required system addon and Kodi aborts
-            # startup into a black screen. So every id is checked against what
-            # the official APK already contains, and the build STOPS rather
-            # than overwrites.
-            #
-            # A skin in the system directory is offered in the skin list but is
-            # NOT made active. Kodi still boots into Estuary, which matters
-            # here: if a skin turns out not to render on Piers, the device is
-            # still usable and the skin can simply be switched away from.
-            ASSETS="$WORK/decoded/assets"
-            mkdir -p "$ASSETS/addons"
-            SKINS=(script.fentastic.helper skin.fentastic skin.povil.nox)
-            for addon_id in "${SKINS[@]}"; do
-              if [ -d "$ASSETS/addons/$addon_id" ]; then
-                echo "::error::$addon_id already ships inside the official APK; refusing to overwrite it"
-                exit 1
-              fi
-            done
-            for z in src/wizard/script.fentastic.helper.zip \
-                     src/wizard/skin.fentastic-*.zip \
-                     src/wizard/skin.povil.nox-*.zip; do
-              test -f "$z" || { echo "::error::missing $z"; exit 1; }
-              unzip -q -o "$z" -d "$ASSETS/addons/"
-            done
-            for addon_id in "${SKINS[@]}"; do
-              test -f "$ASSETS/addons/$addon_id/addon.xml" || {
-                echo "::error::$addon_id missing from APK assets after bundling"
-                exit 1
-              }
-              echo "bundled: $addon_id"
-            done
-            echo "::endgroup::"
-
             echo "::group::repack + zipalign + sign"
             apktool b -o "$WORK/unsigned.apk" "$WORK/decoded"
             python3 src/.github/scripts/verify_apk_package.py \
@@ -229,6 +190,19 @@ jobs:
               --out "$OUT_APK" \
               "$WORK/aligned.apk"
             apksigner verify --print-certs "$OUT_APK" | head -5
+            # THE DOWNLOAD PAGE IS A GIT BRANCH, AND GIT REFUSES FILES OVER
+            # 100 MB. That is a hard pre-receive limit, not a warning, and it
+            # is checked HERE rather than discovered at push time: bundling the
+            # three skins into assets/ took the APK from 76 MB to 119 MB, the
+            # build went green, and only the publish job failed -- after
+            # thirteen minutes of work, with an error about gh-pages that says
+            # nothing about the actual cause.
+            APK_MB=$(( $(stat -c%s "$OUT_APK") / 1000000 ))
+            echo "size: ${APK_MB} MB"
+            if [ "$APK_MB" -ge 99 ]; then
+              echo "::error::$OUT_APK is ${APK_MB} MB. GitHub rejects files of 100 MB or more, so this could never be published to the download page. Whatever was just added to the APK has to be delivered another way -- the Kodi file source takes zips of any size."
+              exit 1
+            fi
             python3 src/.github/scripts/verify_android_apk_metadata.py \
               --aapt aapt \
               --apk "$OUT_APK" \
