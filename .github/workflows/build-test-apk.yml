@@ -37,11 +37,11 @@ on:
       version:
         description: 'Release label (e.g. 22.0-povr.1)'
         required: true
-        default: '22.0-povr.1'
+        default: '22.0-povr.2'
       version_code:
         description: 'Android versionCode'
         required: true
-        default: '2200001'
+        default: '2200002'
 
 permissions:
   contents: write
@@ -171,6 +171,45 @@ jobs:
               else
                 echo "::warning::branding path not present in this Kodi: $d"
               fi
+            done
+            echo "::endgroup::"
+
+            echo "::group::Bundle the three skins into assets/"
+            # THE RULE FROM THE PRODUCTION REPO, AND IT IS NOT OPTIONAL:
+            # assets/addons/ inside the APK is Kodi's SYSTEM addon directory
+            # (special://xbmc/addons/), not the user profile. Dropping a
+            # wrong-platform copy of something Kodi ships there -- the classic
+            # case is inputstream.adaptive arriving with a Windows-only
+            # addon.xml -- breaks a required system addon and Kodi aborts
+            # startup into a black screen. So every id is checked against what
+            # the official APK already contains, and the build STOPS rather
+            # than overwrites.
+            #
+            # A skin in the system directory is offered in the skin list but is
+            # NOT made active. Kodi still boots into Estuary, which matters
+            # here: if a skin turns out not to render on Piers, the device is
+            # still usable and the skin can simply be switched away from.
+            ASSETS="$WORK/decoded/assets"
+            mkdir -p "$ASSETS/addons"
+            SKINS=(script.fentastic.helper skin.fentastic skin.povil.nox)
+            for addon_id in "${SKINS[@]}"; do
+              if [ -d "$ASSETS/addons/$addon_id" ]; then
+                echo "::error::$addon_id already ships inside the official APK; refusing to overwrite it"
+                exit 1
+              fi
+            done
+            for z in src/wizard/script.fentastic.helper.zip \
+                     src/wizard/skin.fentastic-*.zip \
+                     src/wizard/skin.povil.nox-*.zip; do
+              test -f "$z" || { echo "::error::missing $z"; exit 1; }
+              unzip -q -o "$z" -d "$ASSETS/addons/"
+            done
+            for addon_id in "${SKINS[@]}"; do
+              test -f "$ASSETS/addons/$addon_id/addon.xml" || {
+                echo "::error::$addon_id missing from APK assets after bundling"
+                exit 1
+              }
+              echo "bundled: $addon_id"
             done
             echo "::endgroup::"
 

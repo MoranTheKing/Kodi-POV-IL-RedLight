@@ -77,10 +77,25 @@ Two steps, in this order, once each:
 
 Then the APK build can run.
 
-## What the first build deliberately does NOT include
+## What is in the APK, and what is deliberately not
 
-No Red Light, no wizard, no build hydration, no add-ons. Just Kodi 22 under a
-different name, with the icon and banner swapped.
+**In:** Kodi 22 under a different name and icon, plus the three skins bundled
+into `assets/addons/` — `script.fentastic.helper`, `skin.fentastic`,
+`skin.povil.nox`. They are OFFERED, not activated: Kodi still boots into
+Estuary, so if a skin turns out not to render on Piers the device stays usable
+and the skin can be switched away from.
+
+That directory is Kodi's SYSTEM addon path (`special://xbmc/addons/`), not the
+user profile, and putting the wrong thing there is how you get a black screen
+on launch — a wrong-platform copy of an addon Kodi already ships breaks a
+required system addon and startup aborts. The build therefore checks every id
+against what the official APK already contains and STOPS rather than
+overwriting. None of the three is a Kodi system addon, so none of them collides.
+
+The same zips remain installable by hand from the Kodi file source, for anyone
+who would rather not reinstall the APK.
+
+**Not in:** Red Light, the wizard, build hydration, any video add-on.
 
 That is not laziness. If the skins do not come up on Piers there is nothing to
 port, and every hour spent on the other 132 `plugin://` references would be
@@ -142,9 +157,16 @@ unusable file. A file under `downloads/` answers in one response.
 
 **Kodi file source** — `https://morantheking.github.io/Kodi-POV-IL-RedLight/wizard/`
 
-Set up and reachable, but **empty for now**, and honestly so: this first build
-has no wizard and no add-ons, so there is nothing for Kodi to install from it.
-It fills up only if the skin test passes and there is something worth shipping.
+Carries the three skins as installable zips. Install `script.fentastic.helper`
+FIRST — both skins call into it, and installing a skin before it produces
+errors that look like the skin itself failing.
+
+Only needed if you are not reinstalling the APK; from `22.0-povr.2` onward the
+same three are bundled in it.
+
+**Updating in place.** A new APK with the same package id and the same signing
+key updates over the old one and keeps everything — settings, installed
+add-ons, the profile. No uninstall, nothing lost.
 
 ## Setting up Pages (once)
 
