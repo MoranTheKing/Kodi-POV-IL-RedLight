@@ -37,6 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO_SLUG: ${{ github.repository }}
+        shell: bash
         run: |
           set -euo pipefail
           REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${REPO_SLUG}.git"
@@ -52,8 +53,14 @@ jobs:
           git clone --depth=1 --single-branch --branch=main "$REMOTE" src
           cd src
           # .github cannot be pushed with GITHUB_TOKEN; .secrets must never be
-          # published.
-          PUBLISH="$(git ls-tree --name-only HEAD | grep -vxE '\.github|\.secrets')"
+          # published; and .gitignore MUST NOT COME ALONG. That last one is not
+          # housekeeping -- it broke this exact workflow. The repo's .gitignore
+          # carries `*.apk` so local builds never get committed here, and
+          # publishing it to gh-pages meant `git add -A` there silently skipped
+          # the very APKs this job had just downloaded. The job stayed green:
+          # the download worked, the files were on disk, and only the `add`
+          # dropped them.
+          PUBLISH="$(git ls-tree --name-only HEAD | grep -vxE '\.github|\.secrets|\.gitignore')"
           # shellcheck disable=SC2086
           git archive HEAD -- $PUBLISH | tar -x -C ../gh
           cd ..
@@ -76,9 +83,29 @@ jobs:
           touch gh/.nojekyll
           cd gh
           git add -A
+          # -f as well: belt and braces. Even if an ignore rule reappears here
+          # some other way, the artifacts people actually download are not
+          # allowed to be quietly dropped.
+          if compgen -G "downloads/*.apk" > /dev/null; then
+            git add -f downloads/*.apk
+          fi
           if git diff --cached --quiet; then
             echo "gh-pages already matches."
-            exit 0
+          else
+            git commit -q -m "Publish ${GITHUB_SHA:0:7}"
+            git push "$REMOTE" gh-pages
           fi
-          git commit -q -m "Publish ${GITHUB_SHA:0:7}"
-          git push "$REMOTE" gh-pages
+          # PROVE IT LANDED, from the committed tree rather than from the disk.
+          # Every intermediate step above reported success while the APKs were
+          # missing from the commit; the only honest check is to ask the tree
+          # what it actually contains. Same lesson as the patcher health report
+          # in the production repo: verify the outcome, not the step.
+          if gh release view --repo "$REPO_SLUG" >/dev/null 2>&1; then
+            for f in POV-IL-Lab-64bit.apk POV-IL-Lab-32bit.apk; do
+              if ! git cat-file -e "HEAD:downloads/$f" 2>/dev/null; then
+                echo "::error::downloads/$f is NOT in the published gh-pages tree, even though a release exists. The download page would serve a 404."
+                exit 1
+              fi
+              echo "verified in tree: downloads/$f ($(git cat-file -s "$(git rev-parse "HEAD:downloads/$f")") bytes)"
+            done
+          fi
