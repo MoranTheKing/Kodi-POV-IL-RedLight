@@ -51,21 +51,25 @@ inside Kodi's DEX and native libraries in place; the bytes are replaced, not
 relocated, so a different length corrupts the APK. The workflow refuses to run
 if the lengths differ.
 
-**Signing is not set up yet, and it is the one thing that needs a decision.**
-The workflow needs a `KEYSTORE_PASSWORD` repository secret and a
-`.secrets/release.keystore.enc` file. There are two ways to get them and they
-are not equivalent:
+**Signing: a fresh key, generated here.** The production signing key stays in
+the production repository and never comes near this one — an experiment is
+exactly the kind of place a repo gets shared more casually than intended. The
+cost is only that this app can never be updated with a different key, which is
+fine for an app that has never shipped. The two apps coexist on a device
+regardless of key: Android separates them by package id, not by signature.
 
-- *Copy the production key.* One identity to manage. But the production signing
-  key then exists in a second repository, and an experiment is exactly the kind
-  of place where things get shared more casually.
-- *Generate a fresh key here.* The experimental app gets its own identity and
-  the production key never leaves the production repository. The cost is that
-  this app can only ever be updated with this key — which is fine, it is a new
-  app. **This is the recommended option.**
+Two steps, in this order, once each:
 
-Either way the two apps coexist on a device regardless of key, because Android
-separates them by package id, not by signature.
+1. **Settings → Secrets and variables → Actions → New repository secret**,
+   named `KEYSTORE_PASSWORD`. Any long random string; save it somewhere you
+   will still have it in a year, because losing it means this app can never be
+   updated again.
+2. **Actions → Generate signing keystore → Run workflow.** It creates the key
+   on the runner, encrypts it, and opens a pull request adding
+   `.secrets/release.keystore.enc`. Merge that PR. The unencrypted key never
+   leaves the runner.
+
+Then the APK build can run.
 
 ## What the first build deliberately does NOT include
 
@@ -102,10 +106,41 @@ building from source is not viable there.
 
 ## Running it
 
-Actions → **Build the Kodi 22 test APK** → Run workflow. It produces a 32-bit
-and a 64-bit APK as a build artifact. Install beside what you already have.
+Actions → **Build the Kodi 22 test APK** → Run workflow. It builds both
+architectures, publishes a release, and refreshes the download page.
 
 The Piers 32-bit APK lives under `arm/` on the mirror, not `armeabi-v7a/`,
 while the file inside is still named `armeabi-v7a`. The workflow already
 accounts for that; it is written down because it is the kind of thing that
 looks like a broken URL.
+
+## Getting it onto a device
+
+**Download page** — <https://morantheking.github.io/Kodi-POV-IL-RedLight/>
+
+**Downloader** (Fire TV and similar) — paste:
+
+```
+morantheking.github.io/Kodi-POV-IL-RedLight/downloads/POV-IL-Lab-64bit.apk
+```
+
+The release assets are named **without a version** on purpose. Downloader takes
+a URL once and people write it down; if the filename moved with every build,
+every previously-shared link would break. The version lives in the release tag
+and in the APK's own `versionName`.
+
+The APKs are copied onto the Pages site as plain files rather than linked to
+the release, because a GitHub Release download is a redirect chain and
+Downloader does not follow it — it lands on an HTML page and hands you an
+unusable file. A file under `downloads/` answers in one response.
+
+**Kodi file source** — `https://morantheking.github.io/Kodi-POV-IL-RedLight/wizard/`
+
+Set up and reachable, but **empty for now**, and honestly so: this first build
+has no wizard and no add-ons, so there is nothing for Kodi to install from it.
+It fills up only if the skin test passes and there is something worth shipping.
+
+## Setting up Pages (once)
+
+Settings → Pages → Source: **Deploy from a branch**, Branch: **gh-pages**, Folder: **/**.
+The branch appears the first time `Deploy GitHub Pages` runs.

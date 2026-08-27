@@ -202,9 +202,39 @@ jobs:
           done
           ls -la out/
 
-      - name: Upload APKs
+      - name: Upload APKs as a build artifact
         uses: actions/upload-artifact@v4
         with:
           name: pov-il-lab-apks
           path: out/*.apk
           if-no-files-found: error
+
+      # THE ASSET NAMES CARRY NO VERSION, AND THAT IS THE POINT. Downloader
+      # takes a URL once and people write it down; if the filename moved with
+      # every build, every previously-shared link would 404. So the release
+      # always holds POV-IL-Lab-32bit.apk and POV-IL-Lab-64bit.apk, and the
+      # version lives in the release tag and in the APK's own versionName.
+      - name: Publish a release with stable asset names
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          cp "out/POV-IL-Lab-${VERSION}-32bit.apk" out/POV-IL-Lab-32bit.apk
+          cp "out/POV-IL-Lab-${VERSION}-64bit.apk" out/POV-IL-Lab-64bit.apk
+          if gh release view "v${VERSION}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "v${VERSION}" --repo "${{ github.repository }}" --clobber \
+              out/POV-IL-Lab-32bit.apk out/POV-IL-Lab-64bit.apk
+          else
+            gh release create "v${VERSION}" --repo "${{ github.repository }}" \
+              --title "POV IL Lab ${VERSION}" \
+              --notes "Kodi 22 Piers test build. Package id org.xbmc.povr -- installs beside stock Kodi and beside Kodi POV IL. No add-ons, no Red Light: this exists only to find out whether the skins render on Piers." \
+              out/POV-IL-Lab-32bit.apk out/POV-IL-Lab-64bit.apk
+          fi
+
+      # Publishing the release is what makes the download page current, so ask
+      # for the sync here rather than waiting for an unrelated push to main.
+      - name: Refresh the download page
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy-pages.yml --repo "${{ github.repository }}" || true
