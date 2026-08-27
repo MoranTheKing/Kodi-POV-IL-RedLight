@@ -1,0 +1,210 @@
+name: Build the Kodi 22 test APK
+
+# STEP ONE OF THE EXPERIMENT, AND ONLY STEP ONE.
+#
+# The question this answers is narrow on purpose: does Kodi 22 "Piers" run, and
+# do the three skins this project cares about load on it? Nothing else is in
+# here -- no Red Light, no wizard, no build hydration -- because if the skins do
+# not come up, none of the rest is worth building.
+#
+# WHY AN APK AT ALL, rather than installing Kodi 22 from the Play Store: a
+# device already running stock Kodi cannot install a second one, because
+# Android keys apps by applicationId and stock Kodi owns org.xbmc.kodi. So this
+# rebrands the official APK under a different id, exactly the way the
+# production build does.
+#
+# IT DOES NOT COMPILE KODI. It downloads Team Kodi's own APK and patches the
+# package-id STRINGS in the DEX and native libraries in place. That is why
+# OLD_PACKAGE_ID and PACKAGE_ID must be the SAME LENGTH -- the bytes are
+# replaced, not relocated -- and why apktool's smali reassembly path is
+# deliberately avoided: it crash-looped every previous attempt in the
+# production repo.
+#
+# THE ID IS DELIBERATELY NOT org.xbmc.povi. That is the production build, and
+# reusing it would make this experiment REPLACE the maintainer's working
+# install rather than sit beside it. Three ids, three apps, one device:
+#   org.xbmc.kodi   stock Kodi
+#   org.xbmc.povi   Kodi POV IL (production)
+#   org.xbmc.povr   this        (experimental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kodi_version:
+        description: 'Kodi release on mirrors.kodi.tv (e.g. 22.0-Piers_beta1)'
+        required: true
+        default: '22.0-Piers_beta1'
+      version:
+        description: 'Release label (e.g. 22.0-povr.1)'
+        required: true
+        default: '22.0-povr.1'
+      version_code:
+        description: 'Android versionCode'
+        required: true
+        default: '2200001'
+
+permissions:
+  contents: write
+
+env:
+  OLD_PACKAGE_ID: 'org.xbmc.kodi'
+  PACKAGE_ID: 'org.xbmc.povr'
+  APP_NAME: 'POV IL Lab'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Install build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            openjdk-17-jdk-headless aapt zipalign apksigner python3-pil unzip
+          sudo curl -fsSL -o /usr/local/bin/apktool.jar \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
+          sudo curl -fsSL -o /usr/local/bin/apktool \
+            https://raw.githubusercontent.com/iBotPeaches/Apktool/v2.9.3/scripts/linux/apktool
+          sudo chmod +x /usr/local/bin/apktool
+          apktool --version
+
+      - name: Generate platform branding
+        run: |
+          set -euo pipefail
+          python3 src/.github/scripts/platform_branding.py generate \
+            --logo src/.github/assets/ic_launcher_master.png \
+            --splash src/assets/pov_il_splash.jpg \
+            --out "$RUNNER_TEMP/platform-branding"
+          test -s "$RUNNER_TEMP/platform-branding/android-tv-banner.png"
+          test -s "$RUNNER_TEMP/platform-branding/applaunch_screen.png"
+
+      - name: Decrypt release keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::KEYSTORE_PASSWORD secret is not set. See README.md."
+            exit 1
+          fi
+          echo "::add-mask::$KEYSTORE_PASSWORD"
+          if [ ! -f src/.secrets/release.keystore.enc ]; then
+            echo "::error::No .secrets/release.keystore.enc in this repo. See README.md -- either copy the production one or generate a fresh key."
+            exit 1
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in src/.secrets/release.keystore.enc \
+            -out $HOME/release.keystore \
+            -pass env:KEYSTORE_PASSWORD
+          test -s $HOME/release.keystore
+
+      - name: Build both Android APKs
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$KEYSTORE_PASSWORD"
+          KEY_ALIAS="${KEY_ALIAS_OVERRIDE:-kodipovil}"
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION_CODE="${{ github.event.inputs.version_code }}"
+          KODI_VERSION="${{ github.event.inputs.kodi_version }}"
+          mkdir -p out
+          for arch in armeabi-v7a arm64-v8a; do
+            # THE 32-BIT BUILD IS NOT UNDER armeabi-v7a/ ON THE MIRROR. It is
+            # under arm/, and the file inside is still named armeabi-v7a.
+            # Verified against mirrors.kodi.tv for both Omega and Piers.
+            case "$arch" in
+              armeabi-v7a) MIRROR_DIR="arm";        LABEL="32bit" ;;
+              arm64-v8a)   MIRROR_DIR="arm64-v8a";  LABEL="64bit" ;;
+            esac
+            WORK="$RUNNER_TEMP/build-$arch"
+            mkdir -p "$WORK"
+
+            echo "::group::Download official Kodi APK ($arch)"
+            URL="https://mirrors.kodi.tv/releases/android/${MIRROR_DIR}/kodi-${KODI_VERSION}-${arch}.apk"
+            echo "$URL"
+            curl -fL --retry 3 -o "$WORK/kodi-official.apk" "$URL"
+            echo "::endgroup::"
+
+            echo "::group::apktool decode (keep original dex; no smali rebuild)"
+            apktool d -f -s -o "$WORK/decoded" "$WORK/kodi-official.apk"
+            echo "::endgroup::"
+
+            echo "::group::Package id, label and version metadata"
+            if [ "${#OLD_PACKAGE_ID}" -ne "${#PACKAGE_ID}" ]; then
+              echo "::error::OLD_PACKAGE_ID and PACKAGE_ID must be the same length for binary patching"
+              exit 1
+            fi
+            python3 src/.github/scripts/patch_apk_package_binary.py \
+              "$WORK/decoded" "$OLD_PACKAGE_ID" "$PACKAGE_ID"
+            # apktool keeps versionCode/versionName in apktool.yml and writes
+            # them back on build; the decoded manifest omits both, so editing
+            # AndroidManifest.xml here is a no-op.
+            python3 src/.github/scripts/patch_apktool_metadata.py \
+              "$WORK/decoded/apktool.yml" "$VERSION_CODE" "$VERSION"
+            for f in "$WORK/decoded/res/values/strings.xml" "$WORK/decoded"/res/values-*/strings.xml; do
+              [ -f "$f" ] || continue
+              sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">'"$APP_NAME"'</string>|' "$f" || true
+            done
+            for dens in ldpi mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              ICON_SRC="src/.github/assets/ic_launcher/ic_launcher-${dens}.png"
+              ICON_DST="$WORK/decoded/res/drawable-${dens}/ic_launcher.png"
+              [ -f "$ICON_SRC" ] && [ -f "$ICON_DST" ] && cp "$ICON_SRC" "$ICON_DST"
+            done
+            BRANDING="$RUNNER_TEMP/platform-branding"
+            # Piers may have moved or renamed these. Warn rather than fail:
+            # branding is cosmetic and must not block the one question this
+            # build exists to answer.
+            for pair in \
+              "android-tv-banner.png:res/drawable-xhdpi/banner.png" \
+              "android-tv-banner.png:assets/media/banner.png" \
+              "applaunch_screen.png:assets/media/applaunch_screen.png" \
+              "source-splash.jpg:assets/media/splash.jpg"; do
+              s="${pair%%:*}"; d="${pair##*:}"
+              if [ -f "$WORK/decoded/$d" ] && [ -f "$BRANDING/$s" ]; then
+                cp "$BRANDING/$s" "$WORK/decoded/$d"
+              else
+                echo "::warning::branding path not present in this Kodi: $d"
+              fi
+            done
+            echo "::endgroup::"
+
+            echo "::group::repack + zipalign + sign"
+            apktool b -o "$WORK/unsigned.apk" "$WORK/decoded"
+            python3 src/.github/scripts/verify_apk_package.py \
+              "$WORK/unsigned.apk" \
+              "${OLD_PACKAGE_ID//./\/}" \
+              "${PACKAGE_ID//./\/}"
+            zipalign -p -f 4 "$WORK/unsigned.apk" "$WORK/aligned.apk"
+            OUT_APK="out/POV-IL-Lab-${VERSION}-${LABEL}.apk"
+            apksigner sign \
+              --ks $HOME/release.keystore \
+              --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass "pass:$KEYSTORE_PASSWORD" \
+              --key-pass "pass:$KEYSTORE_PASSWORD" \
+              --out "$OUT_APK" \
+              "$WORK/aligned.apk"
+            apksigner verify --print-certs "$OUT_APK" | head -5
+            python3 src/.github/scripts/verify_android_apk_metadata.py \
+              --aapt aapt \
+              --apk "$OUT_APK" \
+              --package-id "$PACKAGE_ID" \
+              --version-code "$VERSION_CODE" \
+              --version-name "$VERSION" \
+              --app-name "$APP_NAME" \
+              --native-code "$arch"
+            echo "::endgroup::"
+          done
+          ls -la out/
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: pov-il-lab-apks
+          path: out/*.apk
+          if-no-files-found: error
