@@ -109,6 +109,23 @@ jobs:
           else
             echo "::notice::No release with APKs inside the size limit; leaving whatever the page already serves."
           fi
+          # KODI BROWSES THIS SITE AS A DIRECTORY LISTING, and it reads the
+          # HTML for links. A page that describes its files in prose instead of
+          # linking to them shows "0 items" in Kodi's install-from-zip browser
+          # -- which is what happened, from a page redesign that kept every
+          # word and dropped every anchor. Two audiences, one file; only one of
+          # them complains.
+          for dir in wizard repo; do
+            [ -d "gh/$dir" ] || continue
+            for z in gh/$dir/*.zip; do
+              [ -e "$z" ] || continue
+              base=$(basename "$z")
+              if ! grep -q "href=\"$base\"" "gh/$dir/index.html" 2>/dev/null; then
+                echo "::error::$dir/index.html has no plain link to $base. Kodi lists this folder by parsing that HTML and will show it as empty."
+                exit 1
+              fi
+            done
+          done
           touch gh/.nojekyll
           cd gh
           git add -A
