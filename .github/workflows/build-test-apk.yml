@@ -232,9 +232,11 @@ jobs:
               out/POV-IL-Lab-32bit.apk out/POV-IL-Lab-64bit.apk
           fi
 
-      # Publishing the release is what makes the download page current, so ask
-      # for the sync here rather than waiting for an unrelated push to main.
-      - name: Refresh the download page
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run deploy-pages.yml --repo "${{ github.repository }}" || true
+  # PUBLISHING IS PART OF THE BUILD, not a consequence of it. The first version
+  # asked another workflow to run and moved on; that call needed a permission
+  # this job did not have, and `|| true` hid the failure, so a green build left
+  # the download page serving a copy of itself made before the APKs existed.
+  # As a dependent job it cannot be skipped and cannot fail quietly.
+  publish:
+    needs: android
+    uses: ./.github/workflows/pages-sync.yml

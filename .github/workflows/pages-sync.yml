@@ -1,0 +1,84 @@
+name: Pages sync (reusable)
+
+# The actual publish. Called directly by whoever changed something, never
+# triggered by an event, and that is the whole point of it being separate.
+#
+# WHY IT IS NOT AN EVENT-DRIVEN WORKFLOW ANY MORE. It used to be, and the very
+# first real build proved that arrangement broken in two independent ways at
+# once:
+#
+#   1. `on: release: [published]` never fired, because the release was created
+#      by a job using GITHUB_TOKEN, and GitHub deliberately does not let a
+#      token-driven event start another workflow. That is the anti-recursion
+#      rule, and it is not a bug to work around -- it is a rule to stop
+#      depending on.
+#   2. The build's fallback, `gh workflow run deploy-pages.yml || true`, needs
+#      `actions: write`, which the build job did not declare. It failed. The
+#      `|| true` swallowed it whole.
+#
+# So the release was published at 11:11 and the download page went on serving a
+# version of itself built at 11:03, before the APKs existed, with every job
+# green. Two safety nets, both with holes, arranged so that neither reported.
+#
+# Calling this as a job removes the class: the publish is part of the build's
+# own run, it cannot be skipped, and if it fails the build is red.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish main to gh-pages, with the release APKs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_SLUG: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${REPO_SLUG}.git"
+          if git ls-remote --exit-code --heads "$REMOTE" gh-pages >/dev/null 2>&1; then
+            git clone --depth=1 --single-branch --branch=gh-pages "$REMOTE" gh
+          else
+            mkdir gh && cd gh && git init -q && git checkout -q -b gh-pages && cd ..
+          fi
+          cd gh
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          cd ..
+          git clone --depth=1 --single-branch --branch=main "$REMOTE" src
+          cd src
+          # .github cannot be pushed with GITHUB_TOKEN; .secrets must never be
+          # published.
+          PUBLISH="$(git ls-tree --name-only HEAD | grep -vxE '\.github|\.secrets')"
+          # shellcheck disable=SC2086
+          git archive HEAD -- $PUBLISH | tar -x -C ../gh
+          cd ..
+          mkdir -p gh/downloads
+          # NOT `|| true`. If a release exists and its APKs cannot be fetched,
+          # the page would quietly keep serving stale ones -- which is the exact
+          # failure this file was rewritten to end. Only the genuine
+          # "no release yet" case is allowed to pass.
+          if gh release view --repo "$REPO_SLUG" >/dev/null 2>&1; then
+            gh release download --repo "$REPO_SLUG" \
+              --pattern "POV-IL-Lab-64bit.apk" \
+              --pattern "POV-IL-Lab-32bit.apk" \
+              --dir gh/downloads --clobber
+            test -s gh/downloads/POV-IL-Lab-64bit.apk
+            test -s gh/downloads/POV-IL-Lab-32bit.apk
+            echo "APKs staged:"; ls -la gh/downloads/*.apk
+          else
+            echo "::notice::No release yet -- publishing the page without APKs."
+          fi
+          touch gh/.nojekyll
+          cd gh
+          git add -A
+          if git diff --cached --quiet; then
+            echo "gh-pages already matches."
+            exit 0
+          fi
+          git commit -q -m "Publish ${GITHUB_SHA:0:7}"
+          git push "$REMOTE" gh-pages

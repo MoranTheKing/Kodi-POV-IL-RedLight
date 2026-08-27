@@ -1,25 +1,13 @@
 name: Deploy GitHub Pages
 
-# Publishes the download page, and pulls the release APKs onto it as DIRECT
-# files under downloads/.
-#
-# WHY THE APKs ARE COPIED RATHER THAN LINKED. A GitHub Release download is a
-# redirect chain, and Downloader (the app people actually use on a Fire TV)
-# does not follow it -- it lands on an HTML page and hands you an unusable
-# file. A plain file under downloads/ answers in one 200, which is what
-# Downloader needs. This is the same arrangement the production build uses,
-# for the same reason.
-#
-# ALSO ON A PUBLISHED RELEASE, not only on a push to main: the APK build
-# publishes a release without touching main, so a push-only trigger would leave
-# the download page serving the previous APK with nothing scheduled to replace
-# it. That exact failure has happened in the production repo.
+# Republishes the site when main changes, or on demand. The APK build does NOT
+# rely on this: it calls the same reusable job itself, because an event-driven
+# trigger silently failed to fire the first time it mattered. See
+# pages-sync.yml for the full account.
 
 on:
   push:
     branches: [main]
-  release:
-    types: [published, edited]
   workflow_dispatch:
 
 permissions:
@@ -31,44 +19,4 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Publish main to gh-pages, with the release APKs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO_SLUG: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${REPO_SLUG}.git"
-          if git ls-remote --exit-code --heads "$REMOTE" gh-pages >/dev/null 2>&1; then
-            git clone --depth=1 --single-branch --branch=gh-pages "$REMOTE" gh
-          else
-            mkdir gh && cd gh && git init -q && git checkout -q -b gh-pages && cd ..
-          fi
-          cd gh
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          cd ..
-          git clone --depth=1 --single-branch --branch=main "$REMOTE" src
-          cd src
-          # .github cannot be pushed with GITHUB_TOKEN, and .secrets must never
-          # be published. Everything else is the site.
-          PUBLISH="$(git ls-tree --name-only HEAD | grep -vxE '\.github|\.secrets')"
-          # shellcheck disable=SC2086
-          git archive HEAD -- $PUBLISH | tar -x -C ../gh
-          cd ..
-          mkdir -p gh/downloads
-          gh release download --repo "$REPO_SLUG" \
-            --pattern "POV-IL-Lab-64bit.apk" \
-            --pattern "POV-IL-Lab-32bit.apk" \
-            --dir gh/downloads --clobber \
-            || echo "No release APKs yet; the page will say so."
-          touch gh/.nojekyll
-          cd gh
-          git add -A
-          if git diff --cached --quiet; then
-            echo "gh-pages already matches."
-            exit 0
-          fi
-          git commit -q -m "Publish ${GITHUB_SHA:0:7}"
-          git push "$REMOTE" gh-pages
+    uses: ./.github/workflows/pages-sync.yml
