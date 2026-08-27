@@ -65,9 +65,15 @@ Two steps, in this order, once each:
    will still have it in a year, because losing it means this app can never be
    updated again.
 2. **Actions → Generate signing keystore → Run workflow.** It creates the key
-   on the runner, encrypts it, and opens a pull request adding
-   `.secrets/release.keystore.enc`. Merge that PR. The unencrypted key never
-   leaves the runner.
+   on the runner, encrypts it, and commits `.secrets/release.keystore.enc`
+   straight to `main`. The unencrypted key never leaves the runner.
+
+   It used to open a pull request instead, and that failed on the first run:
+   GitHub Actions is barred by default from creating pull requests, so the job
+   went red while the keystore itself sat, perfectly good, on an orphan branch.
+   Enabling that setting would have bought a review step with nothing in it to
+   review — the only file is an encrypted blob the same job just produced — so
+   the workflow pushes directly and refuses to overwrite an existing key.
 
 Then the APK build can run.
 
